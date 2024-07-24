@@ -21,7 +21,7 @@ namespace WpfApp2
           new PropertyMetadata(0, OnDelayInMillisecondsChanged));
 
         private static void OnDelayInMillisecondsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
-          => ((DelayButton)d).UpdateeProgressAnimation();
+          => ((DelayButton)d).UpdateProgressAnimation();
 
         public SolidColorBrush ProgressBrush
         {
@@ -36,11 +36,13 @@ namespace WpfApp2
           new PropertyMetadata(Brushes.DarkRed, OnProgressBrushChanged));
 
         private static void OnProgressBrushChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
-          => ((DelayButton)d).UpdateeProgressAnimation();
+          => ((DelayButton)d).UpdateProgressAnimation();
 
         private CancellationTokenSource? delayCancellationTokenSource;
         private bool isClickValid;
-        private bool isExecutingKeyAction;
+        private bool IsExecutingKeyAction => Keyboard.IsKeyDown(Key.Space) || Keyboard.IsKeyDown(Key.End);
+        private bool IsExecutingMouseAction => Mouse.LeftButton is MouseButtonState.Pressed;
+        private int reentrancyCounter;
         private ProgressBar part_ProgressBar;
         private Storyboard progressStoryBoard;
 
@@ -56,10 +58,10 @@ namespace WpfApp2
             {
                 FillBehavior = FillBehavior.HoldEnd,
             };
-            UpdateeProgressAnimation();
+            UpdateProgressAnimation();
         }
 
-        private void UpdateeProgressAnimation()
+        private void UpdateProgressAnimation()
         {
             if (this.progressStoryBoard.IsFrozen)
             {
@@ -68,10 +70,12 @@ namespace WpfApp2
 
             var delayDuration = TimeSpan.FromMilliseconds(this.DelayInMilliseconds);
             var progressAnimation = new DoubleAnimation(0, 100, new Duration(delayDuration), FillBehavior.HoldEnd);
+            Storyboard.SetTargetName(progressAnimation, "PART_ProgressBar");
             Storyboard.SetTargetProperty(progressAnimation, new PropertyPath(ProgressBar.ValueProperty));
             this.progressStoryBoard.Children.Add(progressAnimation);
 
             var colorAnimation = new ColorAnimation(this.ProgressBrush.Color, Colors.Green, new Duration(delayDuration), FillBehavior.HoldEnd);
+            Storyboard.SetTargetName(colorAnimation, "PART_ProgressBar");
             Storyboard.SetTargetProperty(colorAnimation, new PropertyPath("(0).(1)", Control.ForegroundProperty, SolidColorBrush.ColorProperty));
             this.progressStoryBoard.Children.Add(colorAnimation);
 
@@ -86,6 +90,11 @@ namespace WpfApp2
 
         protected override async void OnMouseLeftButtonDown(MouseButtonEventArgs e)
         {
+            if (this.IsExecutingKeyAction || this.ClickMode is ClickMode.Hover)
+            {
+                return;
+            }
+
             try
             {
                 this.delayCancellationTokenSource = new CancellationTokenSource();
@@ -105,6 +114,11 @@ namespace WpfApp2
 
         protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
         {
+            if (this.IsExecutingKeyAction || this.ClickMode is ClickMode.Hover)
+            {
+                return;
+            }
+
             this.delayCancellationTokenSource?.Cancel();
             StopProgressAnimation();
 
@@ -122,49 +136,68 @@ namespace WpfApp2
 
         protected override async void OnMouseEnter(MouseEventArgs e)
         {
-            try
+            if (this.IsExecutingKeyAction)
             {
-                if (this.ClickMode is ClickMode.Hover)
+                return;
+            }
+
+            if (this.ClickMode is ClickMode.Hover)
+            {
+                try
                 {
                     this.delayCancellationTokenSource = new CancellationTokenSource();
                     await DelayActionAsync(this.delayCancellationTokenSource.Token);
                 }
+                catch (OperationCanceledException)
+                {
+                    return;
+                }
+                finally
+                {
+                    this.delayCancellationTokenSource?.Dispose();
+                    this.delayCancellationTokenSource = null;
+                }
+            }
 
-                base.OnMouseEnter(e);
-            }
-            catch (OperationCanceledException)
-            {
-                return;
-            }
-            finally
-            {
-                this.delayCancellationTokenSource?.Dispose();
-                this.delayCancellationTokenSource = null;
-            }
+            base.OnMouseEnter(e);
         }
 
         protected override void OnMouseLeave(MouseEventArgs e)
         {
-            this.delayCancellationTokenSource?.Cancel();
-            StopProgressAnimation();
+            if (this.IsExecutingKeyAction)
+            {
+                return;
+            }
+
+            if (this.ClickMode is ClickMode.Hover)
+            {
+                this.delayCancellationTokenSource?.Cancel();
+                StopProgressAnimation();
+            }
+
             base.OnMouseLeave(e);
         }
 
         protected override async void OnKeyDown(KeyEventArgs e)
         {
+            if (this.ClickMode is ClickMode.Hover)
+            {
+                return;
+            }
+
             if (e.Key is Key.Enter or Key.Space)
             {
-                if (this.isExecutingKeyAction)
+                if (this.IsExecutingMouseAction || this.reentrancyCounter > 0)
                 {
                     return;
                 }
 
-                this.isExecutingKeyAction = true;
-
                 try
                 {
+                    this.reentrancyCounter++;
                     this.delayCancellationTokenSource = new CancellationTokenSource();
                     await DelayActionAsync(this.delayCancellationTokenSource.Token);
+
                 }
                 catch (OperationCanceledException)
                 {
@@ -182,8 +215,18 @@ namespace WpfApp2
 
         protected override void OnKeyUp(KeyEventArgs e)
         {
+            if (this.ClickMode is ClickMode.Hover)
+            {
+                return;
+            }
+
             if (e.Key is Key.Enter or Key.Space)
             {
+                if (this.IsExecutingMouseAction)
+                {
+                    return;
+                }
+
                 this.delayCancellationTokenSource?.Cancel();
                 StopProgressAnimation();
 
@@ -196,27 +239,39 @@ namespace WpfApp2
                 }
 
                 this.isClickValid = false;
-                this.isExecutingKeyAction = false;
             }
 
             base.OnKeyUp(e);
+            this.reentrancyCounter--;
         }
 
         private async Task DelayActionAsync(CancellationToken cancellationToken)
         {
-            this.delayCancellationTokenSource = new CancellationTokenSource();
             var delayDuration = TimeSpan.FromMilliseconds(this.DelayInMilliseconds);
+            cancellationToken.ThrowIfCancellationRequested();
             StartProgressAnimation();
             await Task.Delay(delayDuration, cancellationToken);
             this.isClickValid = true;
         }
 
         private void StartProgressAnimation()
-          => this.part_ProgressBar?.BeginStoryboard(this.progressStoryBoard, HandoffBehavior.SnapshotAndReplace, true);
+        {
+            if (this.part_ProgressBar is null)
+            {
+                return;
+            }
+
+            this.progressStoryBoard.Begin(this.part_ProgressBar, isControllable: true);
+        }
 
         private void StopProgressAnimation()
         {
-            this.progressStoryBoard.Stop();
+            if (this.part_ProgressBar is null)
+            {
+                return;
+            }
+
+            this.progressStoryBoard.Stop(this.part_ProgressBar);
             this.progressStoryBoard.Remove(this.part_ProgressBar);
         }
     }

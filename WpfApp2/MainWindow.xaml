@@ -25,6 +25,14 @@
             Content="DelayButton Delay 1000"
             DelayInMilliseconds="1000" />
 
+        <local:DelayButton
+            Height="50"
+            Margin="10"
+            FontSize="35"
+            Command="{Binding ChangeIdCommand}"
+            Content="DelayButton Delay 0500"
+            DelayInMilliseconds="500" />
+
         <!--<Button
             Height="50"
             Margin="10"
