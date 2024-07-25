@@ -33,11 +33,30 @@
             Content="DelayButton Delay 0500"
             DelayInMilliseconds="500" />
 
-        <!--<Button
+        <local:DelayButton
             Height="50"
             Margin="10"
             FontSize="35"
             Command="{Binding ChangeIdCommand}"
-            Content="Normal Button"/>-->
+            Content="DelayButton Delay 0200"
+            DelayInMilliseconds="200" />
+
+        <local:DelayButton
+            Height="50"
+            Margin="10"
+            FontSize="35"
+            Command="{Binding ChangeIdCommand}"
+            Content="DelayButton Delay 0100"
+            DelayInMilliseconds="100" />
+
+        <local:DelayButton
+            Height="50"
+            Margin="10"
+            FontSize="35"
+            Command="{Binding ChangeIdCommand}"
+            Content="DelayButton Delay 0000"
+            DelayInMilliseconds="0" />
+
+
     </StackPanel>
 </Window>

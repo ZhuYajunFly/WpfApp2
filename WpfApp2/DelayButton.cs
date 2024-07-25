@@ -40,8 +40,8 @@ namespace WpfApp2
 
         private CancellationTokenSource? delayCancellationTokenSource;
         private bool isClickValid;
-        private bool IsExecutingKeyAction => Keyboard.IsKeyDown(Key.Space) || Keyboard.IsKeyDown(Key.End);
-        private bool IsExecutingMouseAction => Mouse.LeftButton is MouseButtonState.Pressed;
+        private bool isExecutingKeyAction;
+        private bool isExecutingMouseAction;
         private int reentrancyCounter;
         private ProgressBar part_ProgressBar;
         private Storyboard progressStoryBoard;
@@ -90,10 +90,14 @@ namespace WpfApp2
 
         protected override async void OnMouseLeftButtonDown(MouseButtonEventArgs e)
         {
-            if (this.IsExecutingKeyAction || this.ClickMode is ClickMode.Hover)
+            if (this.isExecutingKeyAction || this.ClickMode is ClickMode.Hover)
             {
                 return;
             }
+
+            this.isExecutingMouseAction = true;
+            _ = Focus();
+            _ = Mouse.Capture(this);
 
             try
             {
@@ -114,7 +118,7 @@ namespace WpfApp2
 
         protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
         {
-            if (this.IsExecutingKeyAction || this.ClickMode is ClickMode.Hover)
+            if (this.isExecutingKeyAction || this.ClickMode is ClickMode.Hover)
             {
                 return;
             }
@@ -126,17 +130,20 @@ namespace WpfApp2
             {
                 if (!this.isClickValid)
                 {
+                    _ = Mouse.Capture(null);
+                    this.isExecutingMouseAction = false;
                     return;
                 }
             }
 
             base.OnMouseLeftButtonUp(e);
             this.isClickValid = false;
+            this.isExecutingMouseAction = false;
         }
 
         protected override async void OnMouseEnter(MouseEventArgs e)
         {
-            if (this.IsExecutingKeyAction)
+            if (this.isExecutingKeyAction)
             {
                 return;
             }
@@ -145,6 +152,7 @@ namespace WpfApp2
             {
                 try
                 {
+                    this.isExecutingMouseAction = true;
                     this.delayCancellationTokenSource = new CancellationTokenSource();
                     await DelayActionAsync(this.delayCancellationTokenSource.Token);
                 }
@@ -164,7 +172,7 @@ namespace WpfApp2
 
         protected override void OnMouseLeave(MouseEventArgs e)
         {
-            if (this.IsExecutingKeyAction)
+            if (this.isExecutingKeyAction)
             {
                 return;
             }
@@ -173,6 +181,7 @@ namespace WpfApp2
             {
                 this.delayCancellationTokenSource?.Cancel();
                 StopProgressAnimation();
+                this.isExecutingMouseAction = false;
             }
 
             base.OnMouseLeave(e);
@@ -187,7 +196,7 @@ namespace WpfApp2
 
             if (e.Key is Key.Enter or Key.Space)
             {
-                if (this.IsExecutingMouseAction || this.reentrancyCounter > 0)
+                if (this.isExecutingMouseAction || this.reentrancyCounter > 0)
                 {
                     return;
                 }
@@ -195,6 +204,7 @@ namespace WpfApp2
                 try
                 {
                     this.reentrancyCounter++;
+                    this.isExecutingKeyAction = true;
                     this.delayCancellationTokenSource = new CancellationTokenSource();
                     await DelayActionAsync(this.delayCancellationTokenSource.Token);
 
@@ -222,27 +232,28 @@ namespace WpfApp2
 
             if (e.Key is Key.Enter or Key.Space)
             {
-                if (this.IsExecutingMouseAction)
+                if (this.isExecutingMouseAction)
                 {
                     return;
                 }
 
                 this.delayCancellationTokenSource?.Cancel();
                 StopProgressAnimation();
+                this.reentrancyCounter--;
 
                 if (this.ClickMode is ClickMode.Release)
                 {
                     if (!this.isClickValid)
                     {
+                        this.isExecutingKeyAction = false;
                         return;
                     }
                 }
-
-                this.isClickValid = false;
             }
 
             base.OnKeyUp(e);
-            this.reentrancyCounter--;
+            this.isClickValid = false;
+            this.isExecutingKeyAction = false;
         }
 
         private async Task DelayActionAsync(CancellationToken cancellationToken)
